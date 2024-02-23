@@ -24,6 +24,11 @@ import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 
 /**
+ * DelegateConsistencyServiceImpl是一个一致性策略选择的类，根据不同的策略触发条件(在nacos中，CP与AP切换的条件是注册的服务实例是否是临时实例)，
+ * 选择PersistentConsistencyService策略或者EphemeralConsistencyService策略，而EphemeralConsistencyService对应的是DistroConsistencyServiceImpl，
+ * 采用的协议是阿里自研的Distro，我个人觉得就像gossip协议；
+ * PersistentConsistencyService对应的是RaftConsistencyServiceImpl，其底层采用的是Raft协议；这
+ * 两种一致性策略下的数据存储互不影响，所以nacos实现了AP模式与CP模式在一个组件中同时存在
  * Consistency delegate.
  *
  * @author nkorange

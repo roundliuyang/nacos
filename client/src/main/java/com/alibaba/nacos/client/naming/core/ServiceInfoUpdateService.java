@@ -94,7 +94,8 @@ public class ServiceInfoUpdateService implements Closeable {
             if (futureMap.get(serviceKey) != null) {
                 return;
             }
-            
+
+            // UpdateTask见名知意
             ScheduledFuture<?> future = addTask(new UpdateTask(serviceName, groupName, clusters));
             futureMap.put(serviceKey, future);
         }
@@ -188,12 +189,14 @@ public class ServiceInfoUpdateService implements Closeable {
                     return;
                 }
                 // TODO multiple time can be configured.
+                // 一系列逻辑，但是最终都会走finally中的逻辑...
                 delayTime = serviceObj.getCacheMillis() * DEFAULT_UPDATE_CACHE_TIME_MULTIPLE;
                 resetFailCount();
             } catch (Throwable e) {
                 incFailCount();
                 NAMING_LOGGER.warn("[NA] failed to update serviceName: " + groupedServiceName, e);
             } finally {
+                // delayTime默认为60秒
                 executor.schedule(this, Math.min(delayTime << failCount, DEFAULT_DELAY * 60), TimeUnit.MILLISECONDS);
             }
         }

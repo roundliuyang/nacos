@@ -64,11 +64,13 @@ public class BeatReactor implements Closeable {
     public BeatReactor(NamingHttpClientProxy serverProxy, Properties properties) {
         this.serverProxy = serverProxy;
         int threadCount = initClientBeatThreadCount(properties);
+        // 定时任务线程
+        // 所以“心跳包”的核心就是：通过一个定时任务守护线程，定时去调用Nacos服务端的发送心跳包的API接口！
         this.executorService = new ScheduledThreadPoolExecutor(threadCount, new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
                 Thread thread = new Thread(r);
-                thread.setDaemon(true);
+                thread.setDaemon(true);   // 守护线程（所有用户线程结束后，守护线程会自动结束）
                 thread.setName("com.alibaba.nacos.naming.beat.sender");
                 return thread;
             }
@@ -99,6 +101,7 @@ public class BeatReactor implements Closeable {
             existBeat.setStopped(true);
         }
         dom2Beat.put(key, beatInfo);
+        // 第一次调用 = 触发心跳任务
         executorService.schedule(new BeatTask(beatInfo), beatInfo.getPeriod(), TimeUnit.MILLISECONDS);
         MetricsMonitor.getDom2BeatSizeMonitor().set(dom2Beat.size());
     }
@@ -175,8 +178,10 @@ public class BeatReactor implements Closeable {
             if (beatInfo.isStopped()) {
                 return;
             }
+            // 计算下一次发送的时间
             long nextTime = beatInfo.getPeriod();
             try {
+                // 此处就是去调用“发送心跳API”
                 JsonNode result = serverProxy.sendBeat(beatInfo, BeatReactor.this.lightBeatEnabled);
                 long interval = result.get("clientBeatInterval").asLong();
                 boolean lightBeatEnabled = false;
@@ -212,6 +217,7 @@ public class BeatReactor implements Closeable {
                         JacksonUtils.toJson(beatInfo), ex.getErrCode(), ex.getErrMsg());
                 
             }
+            //第二次发送心跳，循环进行，就形成定时发送心跳的效果
             executorService.schedule(new BeatTask(beatInfo), nextTime, TimeUnit.MILLISECONDS);
         }
     }

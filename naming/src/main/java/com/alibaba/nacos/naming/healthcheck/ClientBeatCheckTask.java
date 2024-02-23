@@ -74,7 +74,12 @@ public class ClientBeatCheckTask implements BeatCheckTask {
     public String taskKey() {
         return KeyBuilder.buildServiceMetaKey(service.getNamespaceId(), service.getName());
     }
-    
+
+    /**
+     * 所以“服务健康检查”的逻辑就是：服务端以Service为单位，使用定时任务线程池，每5秒检查一次Service中所有实例的状态：
+     * 最后心跳时间距当前超过15秒，标记为不健康；
+     * 最后心跳时间距当前超过30秒，将此实例踢除！
+     */
     @Override
     public void run() {
         try {
@@ -82,6 +87,7 @@ public class ClientBeatCheckTask implements BeatCheckTask {
             if (ApplicationUtils.getBean(UpgradeJudgement.class).isUseGrpcFeatures()) {
                 return;
             }
+            // 判断是否该由本节点负责该Service的心跳检查任务
             if (!getDistroMapper().responsible(service.getName())) {
                 return;
             }
@@ -90,9 +96,11 @@ public class ClientBeatCheckTask implements BeatCheckTask {
                 return;
             }
             
+            // 拿出Service中所有的实例（后面遍历检查）
             List<Instance> instances = service.allIPs(true);
             
             // first set health status of instances:
+            // 系统当前时间 - 最后一次心跳时间 > 不健康阈值（15秒），标记为不健康
             for (Instance instance : instances) {
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getInstanceHeartBeatTimeOut()) {
                     if (!instance.isMarked()) {
@@ -114,6 +122,7 @@ public class ClientBeatCheckTask implements BeatCheckTask {
             }
             
             // then remove obsolete instances:
+            // 系统当前时间 - 最后一次心跳时间 > 可剔除阈值（30秒），直接剔除
             for (Instance instance : instances) {
                 
                 if (instance.isMarked()) {

@@ -61,10 +61,10 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
     private HealthCheckTask checkTask;
     
     @JsonIgnore
-    private Set<Instance> persistentInstances = new HashSet<>();
+    private Set<Instance> persistentInstances = new HashSet<>();        // AP模式实例列表（服务发现得到的列表就是
     
     @JsonIgnore
-    private Set<Instance> ephemeralInstances = new HashSet<>();
+    private Set<Instance> ephemeralInstances = new HashSet<>();         // CP模式实例列表（服务发现得到的列表就是它）
     
     @JsonIgnore
     private Service service;
@@ -240,7 +240,8 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         Set<Instance> toUpdateInstances = ephemeral ? ephemeralInstances : persistentInstances;
         
         HashMap<String, Instance> oldIpMap = new HashMap<>(toUpdateInstances.size());
-        
+
+        // 将旧的临时实例ephemeralInstances列表，复制转化为一个Map进行更新操作 
         for (Instance ip : toUpdateInstances) {
             oldIpMap.put(ip.getDatumKey(), ip);
         }

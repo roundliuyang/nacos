@@ -48,6 +48,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
+ * 得熟悉Nacos AP集群得部署方式，Nacos集群在部署时，需要在配置 cluster.conf 文件中配置集群得各个节点，这样每台机器就都知道集群中得其它节点得ip:port了
  * The manager to globally refresh and operate server list.
  *
  * @author nkorange
@@ -76,6 +77,7 @@ public class ServerListManager extends MemberChangeListener {
     
     @PostConstruct
     public void init() {
+        // 集群节点状态同步任务，它会每2秒调用集群其它节点的状态接口，以判断节点是否还在线！
         GlobalExecutor.registerServerStatusReporter(new ServerStatusReporter(), 2000);
         GlobalExecutor.registerServerInfoUpdater(new ServerInfoUpdater());
     }
@@ -187,9 +189,13 @@ public class ServerListManager extends MemberChangeListener {
     }
     
     private class ServerStatusReporter implements Runnable {
-        
+
+        // 集群节点状态同步任务，每2秒执行一次
         @Override
         public void run() {
+            // 很简单，就是调用其它节点的状态接口，告诉其它机器自己还活着（集群中每两台机器直接都会互相调用）；
+            // 如果某个节点在一定时间内，没有收到其它某个节点的状态报告，那就认为这个节点挂了，就会更新自己本地认为的集群存活节点数；
+            // 集群存活节点数会直接影响到“服务健康检查”的目标机器核心变量，从而决定每个Service，将会在哪个Server节点被执行健康检查！
             try {
                 
                 if (EnvUtil.getPort() <= 0) {

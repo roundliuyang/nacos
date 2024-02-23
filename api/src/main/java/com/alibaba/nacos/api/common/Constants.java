@@ -162,11 +162,11 @@ public class Constants {
     
     public static final String DEFAULT_CLUSTER_NAME = "DEFAULT";
     
-    public static final long DEFAULT_HEART_BEAT_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
+    public static final long DEFAULT_HEART_BEAT_TIMEOUT = TimeUnit.SECONDS.toMillis(15);    //15秒 收不到心跳，则会被标记为“不健康”
     
-    public static final long DEFAULT_IP_DELETE_TIMEOUT = TimeUnit.SECONDS.toMillis(30);
+    public static final long DEFAULT_IP_DELETE_TIMEOUT = TimeUnit.SECONDS.toMillis(30);     //30秒 收不到心跳，则“剔除”该实例IP
     
-    public static final long DEFAULT_HEART_BEAT_INTERVAL = TimeUnit.SECONDS.toMillis(5);
+    public static final long DEFAULT_HEART_BEAT_INTERVAL = TimeUnit.SECONDS.toMillis(5);     //默认心跳时间 5秒
     
     public static final String DEFAULT_NAMESPACE_ID = "public";
     

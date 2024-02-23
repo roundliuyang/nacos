@@ -132,7 +132,10 @@ public class NacosNamingService implements NamingService {
     public void registerInstance(String serviceName, Instance instance) throws NacosException {
         registerInstance(serviceName, Constants.DEFAULT_GROUP, instance);
     }
-    
+
+    /**
+     * 注册服务的核心代码
+     */
     @Override
     public void registerInstance(String serviceName, String groupName, Instance instance) throws NacosException {
         NamingUtils.checkInstanceIsLegal(instance);
@@ -211,13 +214,19 @@ public class NacosNamingService implements NamingService {
             throws NacosException {
         return getAllInstances(serviceName, Constants.DEFAULT_GROUP, clusters, subscribe);
     }
-    
+
+    /**
+     * 获取服务实例列表
+     * 所以“服务发现”的逻辑就是：在客户端启动时，会根据需要从Nacos服务端获取自己需要的服务列表（Cluster级别），
+     * 并保存到本地缓存中的注册表中，并开启一个定时任务，每隔10秒去服务端同步一下对应的注册表；
+     * 之后每次需要时，都是从本地缓存中的注册表获取服务列表即可！
+     */
     @Override
     public List<Instance> getAllInstances(String serviceName, String groupName, List<String> clusters,
             boolean subscribe) throws NacosException {
         ServiceInfo serviceInfo;
         String clusterString = StringUtils.join(clusters, ",");
-        if (subscribe) {
+        if (subscribe) {              // 默认是开启订阅（udp通知），所以走这一分支
             serviceInfo = serviceInfoHolder.getServiceInfo(serviceName, groupName, clusterString);
             if (null == serviceInfo) {
                 serviceInfo = clientProxy.subscribe(serviceName, groupName, clusterString);

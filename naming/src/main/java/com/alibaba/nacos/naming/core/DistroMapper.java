@@ -97,7 +97,8 @@ public class DistroMapper extends MemberChangeListener {
         if (lastIndex < 0 || index < 0) {
             return true;
         }
-        
+        // 对serviceName进行hash后，对当前集群节点数量取余，看看是不是自己
+        // 如果不是自己，不用担心，其它机器在被注册时，也会走到这条逻辑，总有一台机器是负责该Service的“健康检查”的
         int target = distroHash(responsibleTag) % servers.size();
         return target >= index && target <= lastIndex;
     }

@@ -107,7 +107,7 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
         String groupedServiceName = NamingUtils.getGroupedName(serviceName, groupName);
         if (instance.isEphemeral()) {
             BeatInfo beatInfo = beatReactor.buildBeatInfo(groupedServiceName, instance);
-            beatReactor.addBeatInfo(groupedServiceName, beatInfo);
+            beatReactor.addBeatInfo(groupedServiceName, beatInfo);    // 发送心跳
         }
         final Map<String, String> params = new HashMap<String, String>(16);
         params.put(CommonParams.NAMESPACE_ID, namespaceId);

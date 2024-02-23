@@ -55,6 +55,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
+ * 使用内存阻塞队列实现异步注册 —— 当接收到provider的注册时，Nacos服务端会将任务封装成Task
  * A consistency protocol algorithm called <b>Distro</b>
  *
  * <p>Use a distro algorithm to divide data into many blocks. Each Nacos server node takes responsibility for exactly
@@ -103,14 +104,17 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     public void init() {
         GlobalExecutor.submitDistroNotifyTask(notifier);
     }
-    
+
+    // 新的Instance任务被封装成Task任务，放入到Notifier中
     @Override
     public void put(String key, Record value) throws NacosException {
+        // 在本机处理服务注册请求
         onPut(key, value);
         // If upgrade to 2.0.X, do not sync for v1.
         if (ApplicationUtils.getBean(UpgradeJudgement.class).isUseGrpcFeatures()) {
             return;
         }
+        // 同步给其它机器进行注册
         distroProtocol.sync(new DistroKey(key, KeyBuilder.INSTANCE_LIST_KEY_PREFIX), DataOperation.CHANGE,
                 globalConfig.getTaskDispatchPeriod() / 2);
     }
@@ -358,7 +362,8 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     public boolean isInitialized() {
         return distroProtocol.isInitialized() || !globalConfig.isDataWarmup();
     }
-    
+
+    // 而notifier是一个线程，单线程处理服务注册任务，也避免了“并发覆盖”问题！
     public class Notifier implements Runnable {
         
         private ConcurrentHashMap<String, String> services = new ConcurrentHashMap<>(10 * 1024);
@@ -386,11 +391,12 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
             return tasks.size();
         }
         
+        // run()方法就是在处理放入到tasks队列中的Task任务
         @Override
         public void run() {
             Loggers.DISTRO.info("distro notifier started");
             
-            for (; ; ) {
+            for (; ; ) {             // 死循环，即使出现异常也不会退出
                 try {
                     Pair<String, DataOperation> pair = tasks.take();
                     handle(pair);

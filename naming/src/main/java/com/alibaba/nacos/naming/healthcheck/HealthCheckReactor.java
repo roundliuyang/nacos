@@ -68,6 +68,8 @@ public class HealthCheckReactor {
         Runnable wrapperTask =
                 task instanceof NacosHealthCheckTask ? new HealthCheckTaskInterceptWrapper((NacosHealthCheckTask) task)
                         : task;
+        
+        // 延迟5秒后，每5秒执行一次
         futureMap.computeIfAbsent(task.taskKey(),
                 k -> GlobalExecutor.scheduleNamingHealth(task, 5000, 5000, TimeUnit.MILLISECONDS));
     }
