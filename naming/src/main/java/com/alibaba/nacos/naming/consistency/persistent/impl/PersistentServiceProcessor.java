@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * PersistentServiceProcessor是基于JRaft实现的一致性服务，之前看配置中心的时候知道，分为写一致和读一致（线性一致）。对于注册中心来说，如果是持久节点会走Raft一致性服务。
  * In cluster mode, start the Raft protocol.
  *
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>

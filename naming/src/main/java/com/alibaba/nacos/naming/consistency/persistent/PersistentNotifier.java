@@ -96,7 +96,7 @@ public final class PersistentNotifier extends Subscriber<ValueChangeEvent> {
                 for (RecordListener listener : listenerMap.get(KeyBuilder.SERVICE_META_KEY_PREFIX)) {
                     try {
                         if (action == DataOperation.CHANGE) {
-                            listener.onChange(key, value);
+                            listener.onChange(key, value);        // 执行updateIps更新内存注册表
                         }
                         if (action == DataOperation.DELETE) {
                             listener.onDelete(key);

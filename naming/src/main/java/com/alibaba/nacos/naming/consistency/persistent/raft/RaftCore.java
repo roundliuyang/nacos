@@ -159,9 +159,11 @@ public class RaftCore implements Closeable {
     public void init() throws Exception {
         Loggers.RAFT.info("initializing Raft sub-system");
         final long start = System.currentTimeMillis();
-        
-        raftStore.loadDatums(notifier, datums);
-        
+
+        // 启动CP集群节点
+        raftStore.loadDatums(notifier, datums);         //从本地磁盘文件加载数据
+
+        // 如果Leader周期不存在，则置为0
         setTerm(NumberUtils.toLong(raftStore.loadMeta().getProperty("term"), 0L));
         
         Loggers.RAFT.info("cache loaded, datum count: {}, current term: {}", datums.size(), peers.getTerm());
@@ -169,8 +171,10 @@ public class RaftCore implements Closeable {
         initialized = true;
         
         Loggers.RAFT.info("finish to load data from disk, cost: {} ms.", (System.currentTimeMillis() - start));
-        
+
+        // 每500ms做一次选举任务
         masterTask = GlobalExecutor.registerMasterElection(new MasterElection());
+        // 每500ms做一次心跳任务
         heartbeatTask = GlobalExecutor.registerHeartbeat(new HeartBeat());
         
         versionJudgement.registerObserver(isAllNewVersion -> {
@@ -185,6 +189,7 @@ public class RaftCore implements Closeable {
             }
         }, 100);
         
+        // 注册PersistentNotifier监听器，用来监听处理 ValueChangeEvent 事件，保存内存中服务注册表时用的
         NotifyCenter.registerSubscriber(notifier);
         
         Loggers.RAFT.info("timer started: leader timeout ms: {}, heart-beat timeout ms: {}",
@@ -196,8 +201,10 @@ public class RaftCore implements Closeable {
     }
     
     /**
+     * 其实Nacos实现的简单Raft协议，逻辑有点不太严谨，就是：即使本次同步不成功，但是主节点的本地磁盘文件 + 内存文件 已经都修改过了，不像Zookeeper的两阶段提交；
+     * 后期Nacos的一致性协议会修改为JRaft，这点肯定会解决！
+     * 
      * Signal publish new record. If not leader, signal to leader. If leader, try to commit publish.
-     *
      * @param key   key
      * @param value value
      * @throws Exception any exception during publish
@@ -206,6 +213,7 @@ public class RaftCore implements Closeable {
         if (stopWork) {
             throw new IllegalStateException("old raft protocol already stop work");
         }
+        // 判断自己是不是Leader
         if (!isLeader()) {
             ObjectNode params = JacksonUtils.createEmptyJsonNode();
             params.put("key", key);
@@ -214,7 +222,7 @@ public class RaftCore implements Closeable {
             parameters.put("key", key);
             
             final RaftPeer leader = getLeader();
-            
+            // 如果本节点不是Leader，就把请求转发给Leader节点处理
             raftProxy.proxyPostLarge(leader.ip, API_PUB, params.toString(), parameters);
             return;
         }
@@ -234,18 +242,22 @@ public class RaftCore implements Closeable {
             ObjectNode json = JacksonUtils.createEmptyJsonNode();
             json.replace("datum", JacksonUtils.transferToJsonNode(datum));
             json.replace("source", JacksonUtils.transferToJsonNode(peers.local()));
-            
+
+            // 核心方法，写本地数据，写内存缓存，发布事件——更新内存服务注册表
             onPublish(datum, peers.local());
             
             final String content = json.toString();
-            
+
+            // 通过CountDownLatch实现半数ack的统计，如果获得到半数以上的ack，则Countdownlatch逻辑才可以继续向下走！
             final CountDownLatch latch = new CountDownLatch(peers.majorityCount());
             for (final String server : peers.allServersIncludeMyself()) {
                 if (isLeader(server)) {
                     latch.countDown();
                     continue;
                 }
-                final String url = buildUrl(server, API_ON_PUB);
+                final String url = buildUrl(server, API_ON_PUB);                // /v1/ns/raft/datum/commit
+                
+                // 同步数据给其它Follower节点，就是HTTP调用“raft/datum/commit”接口，处理逻辑比主节点简单！
                 HttpClient.asyncHttpPostLarge(url, Arrays.asList("key", key), content, new Callback<String>() {
                     @Override
                     public void onReceive(RestResult<String> result) {
@@ -255,7 +267,7 @@ public class RaftCore implements Closeable {
                                             datum.key, server, result.getCode());
                             return;
                         }
-                        latch.countDown();
+                        latch.countDown();           // Http调用正常后，则当作一次ack
                     }
                     
                     @Override
@@ -347,6 +359,12 @@ public class RaftCore implements Closeable {
     }
     
     /**
+     * Leader本节点保存数据的逻辑
+     * 分为三个过程：
+     * 1. 保存数据到磁盘文件
+     * 2. 保存部分信息到缓存datums
+     * 3. 保存文件到内存中的服务注册表（双层ConcurrentHashMap）—— 但不是同步保存，而是通过事件发布，实现异步保存
+     * 需要保存到内存中的服务注册表时，会发布一个ValueChangeEvent事件，该事件会被PersisNotifier.onEvent(ValueChangeEvent)捕捉到，并进行处理：
      * Do publish. If leader, commit publish to store. If not leader, stop publish because should signal to leader.
      *
      * @param datum  datum
@@ -381,9 +399,10 @@ public class RaftCore implements Closeable {
         
         // if data should be persisted, usually this is true:
         if (KeyBuilder.matchPersistentKey(datum.key)) {
+            // 核心，将数据写到本地磁盘
             raftStore.write(datum);
         }
-        
+        // 往内存中保存一些注册表信息
         datums.put(datum.key, datum);
         
         if (isLeader()) {
@@ -398,6 +417,7 @@ public class RaftCore implements Closeable {
             }
         }
         raftStore.updateTerm(local.term.get());
+        // 发布一个ValueChangeEvent事件，PersistentNotifier.onEvent(ValueChangeEvent)会去处理这个事件
         NotifyCenter.publishEvent(ValueChangeEvent.builder().key(datum.key).action(DataOperation.CHANGE).build());
         Loggers.RAFT.info("data added/updated, key={}, term={}", datum.key, local.term);
     }
@@ -469,7 +489,10 @@ public class RaftCore implements Closeable {
     }
     
     public class MasterElection implements Runnable {
-        
+
+        /**
+         * 选举任务的核心run()方法
+         */
         @Override
         public void run() {
             try {
@@ -488,7 +511,9 @@ public class RaftCore implements Closeable {
                 }
                 
                 // reset timeout
+                // Raft选举前的随机休眠阶段（15s到20s之间的随机值）
                 local.resetLeaderDue();
+                // 重新心跳时间为5s
                 local.resetHeartbeatDue();
                 
                 sendVote();
@@ -503,30 +528,38 @@ public class RaftCore implements Closeable {
             RaftPeer local = peers.get(NetUtils.localServer());
             Loggers.RAFT.info("leader timeout, start voting,leader: {}, term: {}", JacksonUtils.toJson(getLeader()),
                     local.term);
-            
+            // 重置集群节点投票
             peers.reset();
-            
+
+            // 选举周期+1
             local.term.incrementAndGet();
+            // 默认投给自己
             local.voteFor = local.ip;
+            // 把自己的状态改为 “候选者”
             local.state = RaftPeer.State.CANDIDATE;
             
             Map<String, String> params = new HashMap<>(1);
             params.put("vote", JacksonUtils.toJson(local));
             for (final String server : peers.allServersWithoutMySelf()) {
+                // 其它节点的API接口为：/raft/vote
                 final String url = buildUrl(server, API_VOTE);
                 try {
+                    // 向其它节点发出选票
                     HttpClient.asyncHttpPost(url, null, params, new Callback<String>() {
                         @Override
+                        // 其它节点给本节点的响应
                         public void onReceive(RestResult<String> result) {
                             if (!result.ok()) {
                                 Loggers.RAFT.error("NACOS-RAFT vote failed: {}, url: {}", result.getCode(), url);
                                 return;
                             }
-                            
+
+                            // 判断是否达到半数选票，成为Leader
                             RaftPeer peer = JacksonUtils.toObj(result.getData(), RaftPeer.class);
                             
                             Loggers.RAFT.info("received approve from peer: {}", JacksonUtils.toJson(peer));
                             
+                            // 判断是否达到半数选票，成为Leader
                             peers.decideLeader(peer);
                             
                         }
