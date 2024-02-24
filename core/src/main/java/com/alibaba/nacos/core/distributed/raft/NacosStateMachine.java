@@ -62,6 +62,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 
 /**
+ * 将Task提交到sofa-jraft框架后，框架会处理所有流程（日志复制、超半数提交），最终会调用用户实现的状态机的onApply方法，此时收到的log已经被过半节点提交，
+ * 可以应用到所有节点的本地状态机中。
  * JRaft StateMachine implemented.
  *
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>
@@ -101,6 +103,7 @@ class NacosStateMachine extends StateMachineAdapter {
             while (iter.hasNext()) {
                 Status status = Status.OK();
                 try {
+                    // 如果是leader节点，这里done不为空，减少反序列化报文的开销
                     if (iter.done() != null) {
                         closure = (NacosClosure) iter.done();
                         message = closure.getMessage();
@@ -110,12 +113,14 @@ class NacosStateMachine extends StateMachineAdapter {
                     }
                     
                     LoggerUtils.printIfDebugEnabled(Loggers.RAFT, "receive log : {}", message);
-                    
+
+                    // 写请求
                     if (message instanceof WriteRequest) {
                         Response response = processor.onApply((WriteRequest) message);
                         postProcessor(response, closure);
                     }
-                    
+
+                    // 一致性读降级走raft流程
                     if (message instanceof ReadRequest) {
                         Response response = processor.onRequest((ReadRequest) message);
                         postProcessor(response, closure);

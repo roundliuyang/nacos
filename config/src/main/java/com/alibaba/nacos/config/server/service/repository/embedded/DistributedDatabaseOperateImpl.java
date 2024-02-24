@@ -509,7 +509,10 @@ public class DistributedDatabaseOperateImpl extends RequestProcessor4CP implemen
             readLock.unlock();
         }
     }
-    
+
+    /**
+     *  raft集群master节点已经commit，这里apply log，将数据落库，提交DumpEvent
+     */
     @Override
     public Response onApply(WriteRequest log) {
         LoggerUtils.printIfDebugEnabled(LogUtil.DEFAULT_LOG, "onApply info : log : {}", log);
@@ -524,10 +527,12 @@ public class DistributedDatabaseOperateImpl extends RequestProcessor4CP implemen
                 isOk = doDataImport(jdbcTemplate, sqlContext);
             } else {
                 sqlContext.sort(Comparator.comparingInt(ModifyRequest::getExecuteNo));
+                // 1. 落库derby
                 isOk = update(transactionTemplate, jdbcTemplate, sqlContext);
                 // If there is additional information, post processing
                 // Put into the asynchronous thread pool for processing to avoid blocking the
                 // normal execution of the state machine
+                // 2. DumpEvent
                 ConfigExecutor.executeEmbeddedDump(() -> handleExtendInfo(log.getExtendInfoMap()));
             }
             
@@ -556,7 +561,8 @@ public class DistributedDatabaseOperateImpl extends RequestProcessor4CP implemen
     public String group() {
         return Constants.CONFIG_MODEL_RAFT_GROUP;
     }
-    
+
+    // 从扩展信息中，反序列化ConfigDumpEvent，发布事件
     private void handleExtendInfo(Map<String, String> extendInfo) {
         if (extendInfo.containsKey(Constants.EXTEND_INFO_CONFIG_DUMP_EVENT)) {
             String jsonVal = extendInfo.get(Constants.EXTEND_INFO_CONFIG_DUMP_EVENT);

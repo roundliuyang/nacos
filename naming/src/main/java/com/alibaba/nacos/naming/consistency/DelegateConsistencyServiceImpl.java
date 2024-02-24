@@ -47,7 +47,15 @@ public class DelegateConsistencyServiceImpl implements ConsistencyService {
         this.persistentConsistencyService = persistentConsistencyService;
         this.ephemeralConsistencyService = ephemeralConsistencyService;
     }
-    
+
+    /**
+     * ephemeral:true AP ephemeralConsistencyService，其实现类为DistroConsistencyServiceImpl
+     * ephemeral:false CP persistentConsistencyService 单节点StandalonePersistentServiceProcessor，集群PersistentServiceProcessor
+     *
+     * @see com.alibaba.nacos.naming.consistency.ephemeral.distro.DistroConsistencyServiceImpl#put(java.lang.String, com.alibaba.nacos.naming.pojo.Record)
+     * @see com.alibaba.nacos.naming.consistency.persistent.impl.PersistentServiceProcessor#put(String, Record)
+     * @see com.alibaba.nacos.naming.consistency.persistent.impl.StandalonePersistentServiceProcessor#put(String, Record)
+     */
     @Override
     public void put(String key, Record value) throws NacosException {
         mapConsistencyService(key).put(key, value);

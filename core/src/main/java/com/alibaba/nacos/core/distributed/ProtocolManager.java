@@ -121,19 +121,26 @@ public class ProtocolManager extends MemberChangeListener implements DisposableB
     
     private void initCPProtocol() {
         ApplicationUtils.getBeanIfExist(CPProtocol.class, protocol -> {
+            // 获取Config类型 这里拿到的是RaftConfig
             Class configType = ClassUtils.resolveGenericType(protocol.getClass());
             Config config = (Config) ApplicationUtils.getBean(configType);
+            // 注入成员
             injectMembers4CP(config);
+            // 初始化
             protocol.init((config));
             ProtocolManager.this.cpProtocol = protocol;
         });
     }
     
     private void injectMembers4CP(Config config) {
+        // 获取当前节点成员信息
         final Member selfMember = memberManager.getSelf();
+        // 获取自己节点的ip端口偏移 比如我自己是8848 这里会拿到的ip:7848
         final String self = selfMember.getIp() + ":" + Integer
                 .parseInt(String.valueOf(selfMember.getExtendVal(MemberMetaDataConstants.RAFT_PORT)));
+        // 拿到其他节点信息 ip:端口    
         Set<String> others = toCPMembersInfo(memberManager.allMembers());
+        // 设置集群节点信息
         config.setMembers(self, others);
     }
     

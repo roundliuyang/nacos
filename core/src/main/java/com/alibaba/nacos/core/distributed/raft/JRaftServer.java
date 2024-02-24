@@ -279,7 +279,11 @@ public class JRaftServer {
             multiRaftGroup.put(groupName, new RaftGroupTuple(node, processor, raftGroupService, machine));
         }
     }
-    
+
+    /**
+     * JRaftServer的get方法，处理ReadRequest。这里调用sofa-jraft的Node.readIndex方法处理一致性读，
+     * 如果处理失败，会降级走一遍raft流程（过半提交，应用log，和写流程一样）。
+     */
     CompletableFuture<Response> get(final ReadRequest request) {
         final String group = request.getGroup();
         CompletableFuture<Response> future = new CompletableFuture<>();
@@ -291,9 +295,12 @@ public class JRaftServer {
         final Node node = tuple.node;
         final RequestProcessor processor = tuple.processor;
         try {
+            // 1. 优先采用ReadIndex方式进行一致性读
+            // 当sofa-jraft框架处理后，发现readIndex<=applyIndex时，ReadIndexClosure收到回调，此时可以读取本地状态机中的数据，即当前derby数据源中的数据。
             node.readIndex(BytesUtil.EMPTY_BYTES, new ReadIndexClosure() {
                 @Override
                 public void run(Status status, long index, byte[] reqCtx) {
+                    // 2. 经过JRaft处理完成后，此处收到回调，响应客户端
                     if (status.isOk()) {
                         try {
                             Response response = processor.onRequest(request);
@@ -317,11 +324,15 @@ public class JRaftServer {
             MetricsMonitor.raftReadFromLeader();
             Loggers.RAFT.warn("Raft linear read failed, go to Leader read logic : {}", e.toString());
             // run raft read
+            // 3. 各种RPC调用发生异常，走raft流程，忽略
             readFromLeader(request, future);
             return future;
         }
     }
-    
+
+    /**
+     * 总的来说，readFromLeader 方法就是用来处理从 Leader 节点读取数据的逻辑，它将读请求转发给 Leader 节点进行处理，并返回处理结果给客户端。
+     */
     public void readFromLeader(final ReadRequest request, final CompletableFuture<Response> future) {
         commit(request.getGroup(), request, future).whenComplete(new BiConsumer<Response, Throwable>() {
             @Override
@@ -353,12 +364,15 @@ public class JRaftServer {
         }
         
         FailoverClosureImpl closure = new FailoverClosureImpl(future);
-        
+
+        // node表示当前节点
         final Node node = tuple.node;
+        // 当前节点为Leader，则直接将数据应用到本地，然后再通知其他节点
         if (node.isLeader()) {
             // The leader node directly applies this request
             applyOperation(node, data, closure);
         } else {
+            // 当前节点不是Leader，则将数据发送给Leader
             // Forward to Leader for request processing
             invokeToLeader(group, data, rpcRequestTimeoutMs, closure);
         }

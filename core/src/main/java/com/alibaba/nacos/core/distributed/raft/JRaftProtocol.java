@@ -48,6 +48,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
+ * nacos使用raft算法是SOFA的JRaft。
+ * JRaftProtocol是JRaft的启动类，也是收发集群消息的入口；JraftServer是另外一个非常重要的类，JRaftProtocol的大部分工作都是由JraftServer完成的，
+ * 可以这么说，JRaftProtocol是JRaft的入口，而JraftServer负责入口后面的具体工作，包括创建与集群的网络连接，触发选举，创建节点信息等。
+ * 
  * A concrete implementation of CP protocol: JRaft.
  *
  * <pre>
@@ -117,10 +121,12 @@ public class JRaftProtocol extends AbstractConsistencyProtocol<RaftConfig, Reque
     public void init(RaftConfig config) {
         if (initialized.compareAndSet(false, true)) {
             this.raftConfig = config;
+            // 注册RaftEvent事件
             NotifyCenter.registerToSharePublisher(RaftEvent.class);
             this.raftServer.init(this.raftConfig);
             this.raftServer.start();
-            
+
+            // 监听 RaftEvent事件
             // There is only one consumer to ensure that the internal consumption
             // is sequential and there is no concurrent competition
             NotifyCenter.registerSubscriber(new Subscriber<RaftEvent>() {

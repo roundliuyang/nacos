@@ -245,7 +245,8 @@ public class ConfigServletInner {
                     fis = new FileInputStream(file);
                     response.setDateHeader("Last-Modified", file.lastModified());
                 }
-                
+
+                // 如果单机部署且使用derby数据源，查询实时配置
                 if (PropertyUtil.isDirectRead()) {
                     out = response.getWriter();
                     out.print(configInfoBase.getContent());
